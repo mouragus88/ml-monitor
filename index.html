@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitor ML — Estoque</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f4f4f0; color: #1a1a1a; min-height: 100vh; padding: 2rem 1rem; }
+.container { max-width: 900px; margin: 0 auto; }
+header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 12px; }
+.logo { font-size: 18px; font-weight: 600; }
+.logo span { color: #f5a623; }
+.last-update { font-size: 12px; color: #999; margin-top: 2px; }
+.btn { background: #1a1a1a; color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 13px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+.btn:hover { background: #333; }
+.btn:active { transform: scale(0.98); }
+.btn-sm { background: transparent; color: #999; border: 1px solid #e0e0e0; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; }
+.btn-sm:hover { border-color: #e74c3c; color: #e74c3c; }
+.add-section { background: #fff; border-radius: 12px; border: 1px solid #e8e8e4; padding: 1.1rem 1.25rem; margin-bottom: 1.5rem; }
+.add-section label { font-size: 11px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.06em; display: block; margin-bottom: 8px; }
+.add-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.add-row input { flex: 1; min-width: 200px; border: 1px solid #e8e8e4; border-radius: 7px; padding: 9px 12px; font-size: 13px; background: #f9f9f7; color: #1a1a1a; outline: none; }
+.add-row input:focus { border-color: #999; background: #fff; }
+.add-row input::placeholder { color: #c0c0c0; }
+.hint { font-size: 11px; color: #bbb; margin-top: 7px; }
+#add-error { font-size: 12px; color: #e74c3c; margin-top: 7px; display: none; }
+.timer-bar { height: 3px; background: #e8e8e4; border-radius: 2px; margin-bottom: 1.5rem; overflow: hidden; }
+.timer-fill { height: 100%; background: #f5a623; border-radius: 2px; transition: width 1s linear; }
+.alert-banner { background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 10px; padding: 12px 16px; font-size: 14px; color: #2e7d32; margin-bottom: 1.5rem; display: none; font-weight: 500; }
+.debug-box { background: #fff8e1; border: 1px solid #ffe082; border-radius: 8px; padding: 10px 14px; font-size: 11px; color: #795548; margin-bottom: 1rem; font-family: monospace; white-space: pre-wrap; display: none; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
+.card { background: #fff; border: 1px solid #e8e8e4; border-radius: 14px; padding: 1.1rem 1.25rem; }
+.card.em-estoque { border-left: 3px solid #4caf50; }
+.card.esgotado    { border-left: 3px solid #ef5350; }
+.card.verificando { border-left: 3px solid #ffa726; }
+.card.erro        { border-left: 3px solid #ce93d8; }
+.card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 12px; }
+.card-name { font-size: 13px; font-weight: 500; line-height: 1.4; flex: 1; }
+.badge { font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
+.badge-ok  { background: #e8f5e9; color: #2e7d32; }
+.badge-out { background: #ffebee; color: #c62828; }
+.badge-chk { background: #fff8e1; color: #e65100; }
+.badge-err { background: #f3e5f5; color: #6a1b9a; }
+.card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.stat { background: #f9f9f7; border-radius: 8px; padding: 8px 10px; }
+.stat-label { font-size: 10px; color: #aaa; margin-bottom: 3px; text-transform: uppercase; }
+.stat-val { font-size: 16px; font-weight: 600; }
+.green { color: #2e7d32; }
+.red   { color: #c62828; }
+.card-footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
+.card-link { font-size: 12px; color: #1976d2; text-decoration: none; }
+.card-link:hover { text-decoration: underline; }
+.card-time { font-size: 10px; color: #ccc; }
+.card-actions { display: flex; gap: 6px; align-items: center; }
+.empty { grid-column: 1/-1; text-align: center; padding: 3rem; border: 1px dashed #ddd; border-radius: 12px; color: #ccc; font-size: 14px; }
+.spin { animation: spin 0.8s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <div class="logo">Monitor <span>ML</span> Estoque</div>
+      <div class="last-update" id="last-update">Aguardando verificacao...</div>
+    </div>
+    <button class="btn" onclick="checkAll()"><span id="ico">↻</span> Verificar agora</button>
+  </header>
+
+  <div class="timer-bar"><div class="timer-fill" id="tfill" style="width:100%"></div></div>
+  <div id="alert-banner" class="alert-banner"></div>
+  <div id="debug-box" class="debug-box"></div>
+
+  <div class="add-section">
+    <label>Adicionar anuncio</label>
+    <div class="add-row">
+      <input id="inp-url" placeholder="Cole o link completo do anuncio no ML" />
+      <input id="inp-name" placeholder="Nome para identificar" style="max-width:210px;" />
+      <button class="btn" onclick="addItem()">+ Adicionar</button>
+    </div>
+    <p class="hint">Aceita link completo do ML ou so o ID (MLB seguido de numeros)</p>
+    <div id="add-error"></div>
+  </div>
+
+  <div class="cards" id="cards"></div>
+</div>
+
+<script>
+const SK = 'ml_items_v5';
+const HK = 'ml_hist_v5';
+const INTERVAL = 5 * 60 * 1000;
+
+let items = [], hist = {}, timerRef = null, timerStart = 0;
+let debugLog = [];
+
+function log(msg) {
+  debugLog.push(new Date().toLocaleTimeString('pt-BR') + ' — ' + msg);
+  const box = document.getElementById('debug-box');
+  box.style.display = 'block';
+  box.textContent = debugLog.slice(-10).join('\n');
+}
+
+function extractId(raw) {
+  raw = raw.trim();
+  if (/^MLB\d+$/i.test(raw)) return raw.toUpperCase();
+  let m = raw.match(/[?&#]wid=(MLB\d+)/i);
+  if (m) return m[1].toUpperCase();
+  m = raw.match(/\/p?\/(MLB\d+)/i);
+  if (m) return m[1].toUpperCase();
+  m = raw.match(/\b(MLB\d{6,})\b/i);
+  if (m) return m[1].toUpperCase();
+  return null;
+}
+
+function load() {
+  try { const s = localStorage.getItem(SK); if (s) items = JSON.parse(s); } catch(e) {}
+  try { const h = localStorage.getItem(HK); if (h) hist = JSON.parse(h); } catch(e) {}
+  if (!items.length) items = [
+    { id: 'MLB4430105239', name: 'Ferrari Testarossa Hot Wheels', status: null },
+    { id: 'MLB6184792304', name: 'Mitsubishi Lancer Evo VI Hot Wheels', status: null },
+  ];
+}
+
+function save() {
+  try { localStorage.setItem(SK, JSON.stringify(items)); localStorage.setItem(HK, JSON.stringify(hist)); } catch(e) {}
+}
+
+function showErr(msg) {
+  const el = document.getElementById('add-error');
+  el.textContent = msg; el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 5000);
+}
+
+function addItem() {
+  const raw  = document.getElementById('inp-url').value;
+  const name = document.getElementById('inp-name').value.trim();
+  const id   = extractId(raw);
+  if (!id) { showErr('Nao achei um ID MLB valido. Cole o link completo do anuncio.'); return; }
+  if (items.find(i => i.id === id)) { showErr('Esse anuncio ja esta na lista.'); return; }
+  items.push({ id, name: name || id, status: null });
+  document.getElementById('inp-url').value = '';
+  document.getElementById('inp-name').value = '';
+  save(); render(); checkItem(id);
+}
+
+function removeItem(id) {
+  if (!confirm('Remover esse anuncio?')) return;
+  items = items.filter(i => i.id !== id);
+  delete hist[id];
+  save(); render();
+}
+
+function fmtP(v) {
+  if (v == null) return '—';
+  return 'R$ ' + Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function fmtT() {
+  return new Date().toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+
+function render() {
+  const c = document.getElementById('cards');
+  if (!items.length) { c.innerHTML = '<div class="empty">Nenhum anuncio. Cole o link do ML acima.</div>'; return; }
+  c.innerHTML = '';
+  items.forEach(item => {
+    const s = item.status;
+    let bc='badge-chk', bt='Verificando...', cc='verificando';
+    let qtd='—', preco='—', vend='—', link='', time='', qtdCls='';
+    if (s === 'error') { bc='badge-err'; bt='Erro de conexao'; cc='erro'; }
+    else if (s && typeof s === 'object') {
+      const d = s.available_quantity || 0;
+      bc = d > 0 ? 'badge-ok' : 'badge-out';
+      bt = d > 0 ? 'Em estoque' : 'Esgotado';
+      cc = d > 0 ? 'em-estoque' : 'esgotado';
+      qtdCls = d > 0 ? 'green' : 'red';
+      qtd = d; preco = fmtP(s.price);
+      vend = s.sold_quantity != null ? s.sold_quantity : '—';
+      link = s.permalink || ''; time = s.at || '';
+    }
+    const el = document.createElement('div');
+    el.className = 'card ' + cc;
+    el.innerHTML = `
+      <div class="card-header">
+        <div class="card-name">${item.name}</div>
+        <span class="badge ${bc}">${bt}</span>
+      </div>
+      <div class="card-grid">
+        <div class="stat"><div class="stat-label">Disponivel</div><div class="stat-val ${qtdCls}">${qtd}</div></div>
+        <div class="stat"><div class="stat-label">Preco</div><div class="stat-val" style="font-size:12px;">${preco}</div></div>
+        <div class="stat"><div class="stat-label">Vendidos</div><div class="stat-val">${vend}</div></div>
+        <div class="stat"><div class="stat-label">ID</div><div class="stat-val" style="font-size:10px;font-family:monospace;font-weight:400;">${item.id}</div></div>
+      </div>
+      <div class="card-footer">
+        ${link ? `<a class="card-link" href="${link}" target="_blank">Ver no ML →</a>` : '<span></span>'}
+        <div class="card-actions">
+          <span class="card-time">${time ? 'Atualizado '+time : ''}</span>
+          <button class="btn-sm" onclick="removeItem('${item.id}')">remover</button>
+        </div>
+      </div>`;
+    c.appendChild(el);
+  });
+}
+
+async function tryFetch(url, label) {
+  try {
+    log('Tentando: ' + label);
+    const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    log(label + ' → status ' + r.status);
+    if (!r.ok) return null;
+    const data = await r.json();
+    if (data && data.id) { log('Sucesso com: ' + label); return data; }
+    return null;
+  } catch(e) {
+    log(label + ' → erro: ' + e.message);
+    return null;
+  }
+}
+
+async function fetchML(id) {
+  const ML_DIRECT   = `https://api.mercadolibre.com/items/${id}`;
+  const ITEMS_MULTI = `https://api.mercadolibre.com/items?ids=${id}`;
+
+  // 1. Tenta diretamente
+  let data = await tryFetch(ML_DIRECT, 'ML direto');
+  if (data) return data;
+
+  // 2. Tenta endpoint /items?ids=
+  const r2 = await tryFetch(ITEMS_MULTI, 'ML multi');
+  if (r2 && Array.isArray(r2) && r2[0] && r2[0].body) return r2[0].body;
+
+  // 3. Tenta corsproxy.io
+  data = await tryFetch(`https://corsproxy.io/?${encodeURIComponent(ML_DIRECT)}`, 'corsproxy.io');
+  if (data) return data;
+
+  // 4. Tenta workers proxy publico
+  data = await tryFetch(`https://proxy.cors.sh/${ML_DIRECT}`, 'cors.sh');
+  if (data) return data;
+
+  return null;
+}
+
+async function checkItem(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  const data = await fetchML(id);
+  if (!data) {
+    item.status = 'error';
+  } else {
+    const prevQty = hist[id] != null ? hist[id].qty : null;
+    const currQty = data.available_quantity || 0;
+    item.status = { available_quantity: currQty, price: data.price, sold_quantity: data.sold_quantity, permalink: data.permalink, at: fmtT() };
+    if (prevQty === 0 && currQty > 0) showAlert(`Voltou o estoque! ${item.name} — ${currQty} un. por ${fmtP(data.price)}`);
+    hist[id] = { qty: currQty };
+    save();
+  }
+  render();
+}
+
+async function checkAll() {
+  const ico = document.getElementById('ico');
+  ico.classList.add('spin');
+  document.getElementById('last-update').textContent = 'Verificando...';
+  debugLog = [];
+  for (const item of items) await checkItem(item.id);
+  ico.classList.remove('spin');
+  document.getElementById('last-update').textContent = 'Ultima verificacao: ' + fmtT() + ' — proxima em 5 min';
+  resetTimer();
+}
+
+function resetTimer() {
+  clearInterval(timerRef); timerStart = Date.now();
+  const fill = document.getElementById('tfill');
+  fill.style.width = '100%';
+  timerRef = setInterval(() => {
+    const pct = Math.max(0, 100 - ((Date.now() - timerStart) / INTERVAL) * 100);
+    fill.style.width = pct + '%';
+    if (pct === 0) { clearInterval(timerRef); checkAll(); }
+  }, 1000);
+}
+
+function showAlert(msg) {
+  const b = document.getElementById('alert-banner');
+  b.textContent = '🔔 ' + msg; b.style.display = 'block';
+  if ('Notification' in window && Notification.permission === 'granted') new Notification('Monitor ML', { body: msg });
+}
+
+if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+
+load(); render(); checkAll();
+</script>
+</body>
+</html>
